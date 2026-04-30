@@ -1,6 +1,0 @@
-Original_Index,X_Coordinate,Y_Coordinate,Epithelial_Markers,Stromal_Markers,Dominant_Program,Is_Sketched
-0,0,0,2,0,Epithelial,1
-1,0,2,3,0,Epithelial,0
-2,10,10,0,2,Stromal,1
-3,10,8,0,1,Stromal,0
-4,5,5,1,1,Mixed,1

@@ -1,41 +1,14 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
+# Build artifacts
 *.o
-*.obj
+bin/*
+!bin/.gitkeep
 
-# Precompiled Headers
-*.gch
-*.pch
+# Data (too large for git)
+data/binned_outputs/
+data/spatial/
 
-# Linker files
-*.ilk
+data/visium_spatial_coords.csv
+data/visium_sparse_genes.txt
 
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# debug information files
-*.dwo
+# macOS
+.DS_Store
