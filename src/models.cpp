@@ -8,6 +8,9 @@
 #include <stdexcept>
 #include <cstdint>
 
+// ________________________________________________________________
+// _______________________Helper Functions_______________________ 
+
 std::vector<int> ComputeMinHashSignature(const std::vector<int>& expressed_genes, int num_hashes) {
     if (num_hashes <= 0) {
         throw std::invalid_argument("num_hashes must be > 0");
@@ -63,7 +66,8 @@ double SignatureSimilarity(const std::vector<int>& sig1, const std::vector<int>&
     return static_cast<double>(matches) / static_cast<double>(sig1.size());
 }
 
-
+// ________________________________________________________________
+// _______________________Baseline Sketching_______________________ 
 
 BaselineSketching::BaselineSketching(const std::vector<std::vector<int>>& gene_matrix, const std::vector<std::vector<double>>& spatial_coords)
     : sparse_gene_matrix(gene_matrix), spatial_coordinates_matrix(spatial_coords) {}
@@ -135,6 +139,9 @@ std::vector<std::size_t> BaselineSketching::ComputeSketch(int k) {
     return sketch_indices;
 }
 
+// ________________________________________________________________
+// _________________________________QuadTree Implementation_________________________________
+
 bool BoundingBox::Contains(double x, double y) const {
     return (x >= x_min && x <= x_max && y >= y_min && y <= y_max);
 }
@@ -164,13 +171,25 @@ bool QuadTreeNode::Insert(std::size_t index, double x, double y) {
         return false;
     }
 
-    if (point_indices.size() < static_cast<std::size_t>(capacity) && northWest == nullptr) {
-        point_indices.push_back(index);
+    if (northWest == nullptr && points.size() < static_cast<std::size_t>(capacity)) {
+        points.push_back({index, x, y}); 
         return true;
     }
 
-        // If the node is full, subdivide it
-    if (northWest == nullptr) Subdivide();
+    // If the node is full, subdivide it
+    // FIX: If we subdivide, we MUST push the points from the parent node down into the children
+    if (northWest == nullptr) {
+        Subdivide();
+        
+        for (const auto& p : points) {
+            if (northWest->Insert(p.index, p.x, p.y)) continue;
+            if (northEast->Insert(p.index, p.x, p.y)) continue;
+            if (southWest->Insert(p.index, p.x, p.y)) continue;
+            southEast->Insert(p.index, p.x, p.y);
+        }
+        // Clear the parent node's points so data only lives in leaves
+        points.clear(); 
+    }
     
     if (northWest->Insert(index, x, y)) return true;
     if (northEast->Insert(index, x, y)) return true;
@@ -183,14 +202,14 @@ bool QuadTreeNode::Insert(std::size_t index, double x, double y) {
 void QuadTreeSketching::AssignLeafBudgets(QuadTreeNode* node, std::vector<int>& bin_to_leaf, std::vector<int>& leaf_budgets, int max_per_leaf) {
     if (!node) return;
 
-        // Check for nullptr (leaf node)
+    // Check for nullptr (leaf node)
     if (!node->northWest) {
         int leaf_id = leaf_budgets.size();
         leaf_budgets.push_back(max_per_leaf);
         
-            // Record which leaf each bin belongs to, so we can decrease the budget as we go
-        for (std::size_t idx : node->point_indices) {
-            bin_to_leaf[idx] = leaf_id;
+        // Record which leaf each bin belongs to, so we can decrease the budget as we go
+        for (const auto& p : node->points) { 
+            bin_to_leaf[p.index] = leaf_id;  
         }
         return;
     }
@@ -201,8 +220,9 @@ void QuadTreeSketching::AssignLeafBudgets(QuadTreeNode* node, std::vector<int>& 
     AssignLeafBudgets(node->southEast, bin_to_leaf, leaf_budgets, max_per_leaf);
 }
 
-QuadTreeSketching::QuadTreeSketching(const std::vector<std::vector<int>>& gene_matrix, const std::vector<std::vector<double>>& spatial_coords)
-    : sparse_gene_matrix(gene_matrix), spatial_coordinates_matrix(spatial_coords) {}
+QuadTreeSketching::QuadTreeSketching(const std::vector<std::vector<int>>& gene_matrix, 
+    const std::vector<std::vector<double>>& spatial_coords, int capacity, int budget)
+    : sparse_gene_matrix(gene_matrix), spatial_coordinates_matrix(spatial_coords), node_capacity(capacity), leaf_budget(budget) {}
 
 std::vector<std::size_t> QuadTreeSketching::ComputeSketch(int k) {
     std::cout << "Computing Spatially-Constrained QuadTree Sketch..." << std::endl;
@@ -226,8 +246,17 @@ std::vector<std::size_t> QuadTreeSketching::ComputeSketch(int k) {
         if (coords[1] > max_y) max_y = coords[1];
     }
 
-    int capacity = (total_bins / target_k) + 1; 
-    QuadTreeNode* root = new QuadTreeNode({min_x, max_x, min_y, max_y}, capacity);
+    // UPDATE: Added capacity as paramter
+    int final_capacity;
+    if (node_capacity > 0) {
+        final_capacity = node_capacity;
+        std::cout << "     User Defined Capacity: " << final_capacity << std::endl;
+    } else {
+        final_capacity = (total_bins / target_k) + 1; 
+        std::cout << "     Dynamic Capacity: " << final_capacity << std::endl;
+    }
+
+    QuadTreeNode* root = new QuadTreeNode({min_x, max_x, min_y, max_y}, final_capacity);
 
     // Add all 480,000 bins into the tree 
     for (std::size_t i = 0; i < total_bins; ++i) {
@@ -236,13 +265,26 @@ std::vector<std::size_t> QuadTreeSketching::ComputeSketch(int k) {
 
     std::vector<int> bin_to_leaf_id(total_bins, -1);
     std::vector<int> leaf_budgets;
+
+    int final_budget;
+    
+    // UPDATED: Added budget as a parameter
+    if (leaf_budget > 0) {
+        final_budget = leaf_budget;
+        std::cout << "     User Defined Budget: " << final_budget << std::endl;
+    } else {
+        int estimated_leaves = total_bins / final_capacity;
+        if (estimated_leaves == 0) estimated_leaves = 1;
+        final_budget = (target_k / estimated_leaves) + 2; 
+        std::cout << "     Dynamic Budget: " << final_budget << std::endl;
+    }
     
     // Cap each leaf at 2 selectable points 
-    AssignLeafBudgets(root, bin_to_leaf_id, leaf_budgets, 2); 
+    AssignLeafBudgets(root, bin_to_leaf_id, leaf_budgets, final_budget); 
 
         //_______________________
     // THE MINHASH SEARCH
-    std::cout << "  -> Running constrained transcriptomic search..." << std::endl;
+    std::cout << "  -> Running transcriptomic search..." << std::endl;
     
     int num_hashes = 128; 
     std::vector<std::vector<int>> all_sigs;

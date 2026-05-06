@@ -52,10 +52,16 @@ struct BoundingBox {
     bool Contains(double x, double y) const;
 };
 
+struct SpatialPoint {
+    std::size_t index;
+    double x;
+    double y;
+};
+
 class QuadTreeNode {
 public:
     BoundingBox boundary;
-    std::vector<std::size_t> point_indices; 
+    std::vector<SpatialPoint> points;   // stores (index, x, y) for points in this node
     int capacity; 
 
     QuadTreeNode* northWest;
@@ -75,10 +81,13 @@ class QuadTreeSketching : public SpatialSketcher {
 private:
     std::vector<std::vector<int>> sparse_gene_matrix; 
     std::vector<std::vector<double>> spatial_coordinates_matrix; 
+    int node_capacity;
+    int leaf_budget;
 
     void AssignLeafBudgets(QuadTreeNode* node, std::vector<int>& bin_to_leaf, std::vector<int>& leaf_budgets, int max_per_leaf);
 
 public: 
-    QuadTreeSketching(const std::vector<std::vector<int>>& gene_matrix, const std::vector<std::vector<double>>& spatial_coords);
+    QuadTreeSketching(const std::vector<std::vector<int>>& gene_matrix, const std::vector<std::vector<double>>& spatial_coords,
+    int capacity=-1, int leaf_budget=-1);
     std::vector<std::size_t> ComputeSketch(int k) override;
 };

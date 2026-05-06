@@ -149,11 +149,11 @@ void RunBaselineVisiumPipeline(const std::string& experiment_name,
 void RunQuadtreeVisiumPipeline(const std::string& experiment_name,
                        const std::vector<std::vector<int>>& sparse_genes,
                        const std::vector<std::vector<double>>& spatial_coords,
-                       int k) {
+                       int k, int capacity=-1, int budget=-1) {
                      
     std::cout << "--- Running " << experiment_name << " (N=" << spatial_coords.size() << ", k=" << k << ") ---\n";
     
-    SpatialSketcher* my_sketcher = new QuadTreeSketching(sparse_genes, spatial_coords);
+    SpatialSketcher* my_sketcher = new QuadTreeSketching(sparse_genes, spatial_coords, capacity, budget);
     std::vector<std::size_t> final_sketch = my_sketcher->ComputeSketch(k);
     
     std::string filename = "bin/" + experiment_name + "_results.csv";
@@ -234,9 +234,16 @@ int main() {
 
     std::cout << "Loaded " << visium_coords.size() << " spatial bins." << std::endl;
 
-    // Run the specific Visium pipeline! Let's sketch 1,000 points.
-    RunQuadtreeVisiumPipeline("visium_quadtree_1000", visium_genes, visium_coords, 1000);
+    // Run the specific Visium pipeline!
+    RunQuadtreeVisiumPipeline("visium_quadtree_1000", visium_genes, visium_coords, 1000, 30000, 60);
     RunBaselineVisiumPipeline("visium_baseline_1000", visium_genes, visium_coords, 1000);
+
+    // Quadtree experiments
+    // RunQuadtreeVisiumPipeline("quadtree_500000_1005", visium_genes, visium_coords, 1000, 500000, 1005);
+    // RunQuadtreeVisiumPipeline("quadtree_35000_70", visium_genes, visium_coords, 1000, 30000, 70);
+    // RunQuadtreeVisiumPipeline("quadtree_30000_60", visium_genes, visium_coords, 1000, 25000, 40);
+    // RunQuadtreeVisiumPipeline("quadtree_25000_50", visium_genes, visium_coords, 1000, 15000, 15);
+    // RunQuadtreeVisiumPipeline("quadtree_20000_40", visium_genes, visium_coords, 1000, 10000, 10);
 
     return 0;
 }
