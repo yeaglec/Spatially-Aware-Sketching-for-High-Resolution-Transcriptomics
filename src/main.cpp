@@ -129,7 +129,7 @@ void ExportVisiumResultsToCSV(const std::string& filename,
     std::cout << "Successfully exported Visium results to " << filename << "\n\n";
 }
 
-void RunBaselineVisiumPipeline(const std::string& experiment_name,
+std::pair<double, double> RunBaselineVisiumPipeline(const std::string& experiment_name,
                        const std::vector<std::vector<int>>& sparse_genes,
                        const std::vector<std::vector<double>>& spatial_coords,
                        int k) {
@@ -138,15 +138,24 @@ void RunBaselineVisiumPipeline(const std::string& experiment_name,
     
     SpatialSketcher* my_sketcher = new BaselineSketching(sparse_genes, spatial_coords);
     std::vector<std::size_t> final_sketch = my_sketcher->ComputeSketch(k);
+
+    // Metrics
+    double rna_hausdorff = ComputeTranscriptomicHausdorff(sparse_genes, final_sketch);
+    double spatial_hausdorff = ComputeCoordinateHausdorff(spatial_coords, final_sketch);
+
+    std::cout << "     [Metric] Transcriptomic Hausdorff (95%): " << rna_hausdorff << "\n";
+    std::cout << "     [Metric] Coordinate Hausdorff (95%): " << spatial_hausdorff << "\n";
     
     std::string filename = "bin/" + experiment_name + "_results.csv";
     // Call the clean Visium exporter
     ExportVisiumResultsToCSV(filename, spatial_coords, final_sketch);
     
     delete my_sketcher;
+
+    return {rna_hausdorff, spatial_hausdorff};
 }
 
-void RunQuadtreeVisiumPipeline(const std::string& experiment_name,
+std::pair<double, double> RunQuadtreeVisiumPipeline(const std::string& experiment_name,
                        const std::vector<std::vector<int>>& sparse_genes,
                        const std::vector<std::vector<double>>& spatial_coords,
                        int k, int capacity=-1, int budget=-1) {
@@ -155,12 +164,21 @@ void RunQuadtreeVisiumPipeline(const std::string& experiment_name,
     
     SpatialSketcher* my_sketcher = new QuadTreeSketching(sparse_genes, spatial_coords, capacity, budget);
     std::vector<std::size_t> final_sketch = my_sketcher->ComputeSketch(k);
+
+    // EVALUATION BLOCK 
+    double rna_hausdorff = ComputeTranscriptomicHausdorff(sparse_genes, final_sketch);
+    double spatial_hausdorff = ComputeCoordinateHausdorff(spatial_coords, final_sketch);
+    
+    std::cout << "     [Metric] Transcriptomic Hausdorff (95%): " << rna_hausdorff << "\n";
+    std::cout << "     [Metric] Coordinate Hausdorff (95%): " << spatial_hausdorff << "\n";
     
     std::string filename = "bin/" + experiment_name + "_results.csv";
     // Call the clean Visium exporter
     ExportVisiumResultsToCSV(filename, spatial_coords, final_sketch);
     
     delete my_sketcher;
+
+    return {rna_hausdorff, spatial_hausdorff};
 }
 
 
@@ -235,8 +253,30 @@ int main() {
     std::cout << "Loaded " << visium_coords.size() << " spatial bins." << std::endl;
 
     // Run the specific Visium pipeline!
-    RunQuadtreeVisiumPipeline("visium_quadtree_1000", visium_genes, visium_coords, 1000, 30000, 60);
-    RunBaselineVisiumPipeline("visium_baseline_1000", visium_genes, visium_coords, 1000);
+    // RunQuadtreeVisiumPipeline("visium_quadtree_1000", visium_genes, visium_coords, 1000, 10000, 21);
+    // RunBaselineVisiumPipeline("visium_baseline_1000", visium_genes, visium_coords, 1000);
+
+    // New parameter sweep for QuadTree:
+    // std::vector<int> capacities = {5000, 10000, 15000, 20000, 30000, 40000, 60000, 80000, 120000, 240000};
+    // std::vector<double> multipliers = {1.0, 1.25, 2.0, 3.0, 5.0};
+    
+    // int k = 1000;
+    // double N = static_cast<double>(visium_coords.size()); // ~479863
+
+    // std::cout << "\n=== STARTING DYNAMIC PARAMETER SWEEP ===\n";
+    // for (int cap : capacities) {
+    //     for (double mult : multipliers) {
+            
+    //         // Calculate the dynamic budget
+    //         double base_budget = (k * static_cast<double>(cap)) / N;
+    //         int dynamic_budget = static_cast<int>(std::ceil(base_budget * mult));
+    //         if (dynamic_budget < 1) dynamic_budget = 1;
+
+    //         std::string exp_name = "sweep_cap" + std::to_string(cap) + "_mult" + std::to_string(mult);
+            
+    //         RunQuadtreeVisiumPipeline(exp_name, visium_genes, visium_coords, k, cap, dynamic_budget);
+    //     }
+    // }
 
     // Quadtree experiments
     // RunQuadtreeVisiumPipeline("quadtree_500000_1005", visium_genes, visium_coords, 1000, 500000, 1005);
@@ -244,6 +284,46 @@ int main() {
     // RunQuadtreeVisiumPipeline("quadtree_30000_60", visium_genes, visium_coords, 1000, 25000, 40);
     // RunQuadtreeVisiumPipeline("quadtree_25000_50", visium_genes, visium_coords, 1000, 15000, 15);
     // RunQuadtreeVisiumPipeline("quadtree_20000_40", visium_genes, visium_coords, 1000, 10000, 10);
+
+    // =================== TODO RYAN ==================
+    // Do any paramterization on the voronni graph you feel necessary
+    // TODO: Can you run the following parameter sweep to compare baseline, quadtree, and voronoi across $k$ values
+    // Can you then take these results and make a plot of coordinate hausdorff and transcriptomic hausdorff across $k$?
+    // In the benchmarking paper, they have a 2 table figure where the top is coordinate hausdorff and the bottom is transcriptomic hausdorff 
+    // Each figure should have the sampling fraction (k/N) on the x axis and the hausdorff distance on the y axis
+    // Then we have 3 lines plots (one for each method) in each figure showing how the methods hausdorff changes across $k$ 
+    
+
+    std::vector<int> k_values = {5000, 10000, 25000, 50000, 75000, 100000};
+    int optimal_capacity = 10000;
+    double N = static_cast<double>(visium_coords.size());
+
+    std::cout << "\n=== STARTING K-SCALING BENCHMARK ===\n";
+
+    // CSVs for visualization
+    std::ofstream scaling_file("scaling_metrics.csv");
+    scaling_file << "Method,k,Coordinate_Hausdorff,Transcriptomic_Hausdorff\n";
+
+    for (int k : k_values) {
+        std::cout << "\nEvaluating k = " << k << "...\n";
+        auto baseline_metrics = RunBaselineVisiumPipeline("baseline_k" + std::to_string(k), visium_genes, visium_coords, k);
+        scaling_file << "Baseline," << k << "," << baseline_metrics.second << "," << baseline_metrics.first << "\n";
+
+        // Calculate the dynamic budget based on the current k
+        double base_budget = (k * static_cast<double>(optimal_capacity)) / N;
+        int dynamic_budget = static_cast<int>(std::ceil(base_budget * 1.0)); // 1.0x Multiplier
+        if (dynamic_budget < 1) dynamic_budget = 1;
+
+        auto quadtree_metrics = RunQuadtreeVisiumPipeline("quadtree_k" + std::to_string(k), visium_genes, visium_coords, k, optimal_capacity, dynamic_budget);
+        scaling_file << "QuadTree," << k << "," << quadtree_metrics.second << "," << quadtree_metrics.first << "\n";
+
+        // Should define a RunVoronoiVisiumPipeline function that matches the signature of RunQuadtreeVisiumPipeline
+        auto voronoi_metrics = RunVoronoiVisiumPipeline("voronoi_k" + std::to_string(k), visium_genes, visium_coords, k);
+        scaling_file << "Voronoi," << k << "," << voronoi_metrics.second << "," << voronoi_metrics.first << "\n";
+        
+    }
+    scaling_file.close();
+    std::cout << "\nScaling benchmark complete! Data saved to scaling_metrics.csv\n";
 
     return 0;
 }

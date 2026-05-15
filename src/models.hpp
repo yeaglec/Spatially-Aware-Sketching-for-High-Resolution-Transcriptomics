@@ -3,6 +3,30 @@
 #include <vector>
 #include <cstddef>
 
+// ________________________________________________________________
+// _______________________Evaluation Metrics_______________________
+
+/** Helper function to extract a specific quantile from a vector of values */
+double GetQuantile(std::vector<double>& values, double quantile);
+
+/** Computes the Robust Transcriptomic Hausdorff Distance (95th percentile)
+ * using MinHash Jaccard approximation. Lower is better. */
+double ComputeTranscriptomicHausdorff(
+    const std::vector<std::vector<int>>& sparse_gene_matrix,
+    const std::vector<std::size_t>& sketch_indices,
+    int num_hashes = 128,
+    double quantile = 0.95);
+
+/** Computes the Robust Coordinate Hausdorff Distance (95th percentile)
+ * using Euclidean physical distance. Lower is better. */
+double ComputeCoordinateHausdorff(
+    const std::vector<std::vector<double>>& spatial_coords,
+    const std::vector<std::size_t>& sketch_indices,
+    double quantile = 0.95);
+
+// ________________________________________________________________
+// _______________________MinHash Helpers__________________________________
+
 std::vector<int> ComputeMinHashSignature(const std::vector<int>& expressed_genes, int num_hashes);
 
 /** Function take in 2 inputs: 2 MinHash signatures

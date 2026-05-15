@@ -7,6 +7,8 @@
 #include <random>
 #include <stdexcept>
 #include <cstdint>
+#include <algorithm> 
+#include <cmath>    
 
 // ________________________________________________________________
 // _______________________Helper Functions_______________________ 
@@ -64,6 +66,81 @@ double SignatureSimilarity(const std::vector<int>& sig1, const std::vector<int>&
         if (sig1[i] == sig2[i]) ++matches;
     }
     return static_cast<double>(matches) / static_cast<double>(sig1.size());
+}
+
+// ________________________________________________________________
+// _______________________Evaluation Metrics_______________________
+
+double GetQuantile(std::vector<double>& values, double quantile) {
+    if (values.empty()) return 0.0;
+    std::sort(values.begin(), values.end()); // ascending order
+    
+    // Calculate the index for the given quantile
+    std::size_t index = static_cast<std::size_t>(quantile * (values.size() - 1));
+    return values[index];
+}
+
+double ComputeTranscriptomicHausdorff(const std::vector<std::vector<int>>& sparse_gene_matrix,
+    const std::vector<std::size_t>& sketch_indices,int num_hashes,double quantile) {
+    
+    if (sparse_gene_matrix.empty() || sketch_indices.empty()) return 0.0;
+    std::cout << "  -> Evaluating Transcriptomic Hausdorff..." << std::endl;
+
+    // Precompute signatures for the SKETCH only (saves massive computation time)
+    std::vector<std::vector<int>> sketch_sigs;
+    sketch_sigs.reserve(sketch_indices.size());
+    for (std::size_t idx : sketch_indices) {
+        sketch_sigs.push_back(ComputeMinHashSignature(sparse_gene_matrix[idx], num_hashes));
+    }
+
+    std::vector<double> min_distances(sparse_gene_matrix.size(), 1.0);
+    for (std::size_t i = 0; i < sparse_gene_matrix.size(); ++i) {
+
+        // Compute signature for the current full-dataset bin
+        std::vector<int> current_sig = ComputeMinHashSignature(sparse_gene_matrix[i], num_hashes);
+        double current_min_dist = 1.0; 
+
+        // Find distance to the nearest neighbor in the sketch
+        for (const auto& sketch_sig : sketch_sigs) {
+            double dist = 1.0 - SignatureSimilarity(current_sig, sketch_sig);
+            if (dist < current_min_dist) {
+                current_min_dist = dist;
+            }
+        }
+        min_distances[i] = current_min_dist;
+    }
+
+    return GetQuantile(min_distances, quantile);
+}
+
+double ComputeCoordinateHausdorff(const std::vector<std::vector<double>>& spatial_coords,
+    const std::vector<std::size_t>& sketch_indices,double quantile) {
+
+    if (spatial_coords.empty() || sketch_indices.empty()) return 0.0;
+    std::cout << "  -> Evaluating Coordinate Hausdorff..." << std::endl;
+    std::vector<double> min_distances(spatial_coords.size(), std::numeric_limits<double>::max());
+
+    // Iterate over the entire dataset
+    for (std::size_t i = 0; i < spatial_coords.size(); ++i) {
+        double current_min_dist = std::numeric_limits<double>::max();
+        double x1 = spatial_coords[i][0];
+        double y1 = spatial_coords[i][1];
+
+        // Find distance to the nearest physical neighbor in the sketch
+        for (std::size_t sketch_idx : sketch_indices) {
+            double x2 = spatial_coords[sketch_idx][0];
+            double y2 = spatial_coords[sketch_idx][1];
+            
+            // Euclidean distance
+            double dist = std::sqrt(std::pow(x1 - x2, 2) + std::pow(y1 - y2, 2));
+            
+            if (dist < current_min_dist) {
+                current_min_dist = dist;
+            }
+        }
+        min_distances[i] = current_min_dist;
+    }
+    return GetQuantile(min_distances, quantile);
 }
 
 // ________________________________________________________________
